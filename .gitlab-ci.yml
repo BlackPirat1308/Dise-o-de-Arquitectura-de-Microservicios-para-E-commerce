@@ -1,0 +1,37 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_REGISTRY: your-docker-registry
+  KUBE_CONFIG: $KUBE_CONFIG
+
+test:
+  stage: test
+  image: node:14
+  script:
+    - npm ci
+    - npm run test
+    - npm run test:e2e
+
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t $DOCKER_REGISTRY/e-shop:$CI_COMMIT_SHA .
+    - echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin $DOCKER_REGISTRY
+    - docker push $DOCKER_REGISTRY/e-shop:$CI_COMMIT_SHA
+
+deploy:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - echo "$KUBE_CONFIG" | base64 -d > kubeconfig
+    - export KUBECONFIG=./kubeconfig
+    - sed -i "s|your-docker-registry/e-shop:latest|$DOCKER_REGISTRY/e-shop:$CI_COMMIT_SHA|" k8s/deployment.yaml
+    - kubectl apply -f k8s/deployment.yaml
+  only:
+    - main
